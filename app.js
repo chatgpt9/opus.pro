@@ -1,52 +1,33 @@
 const express = require('express');
-const multer = require('multer');
+const bodyParser = require('body-parser');
 const { exec } = require('child_process');
 
 const app = express();
-const upload = multer({ dest: 'uploads/' });
+app.use(bodyParser.urlencoded({ extended: false }));
 
-app.use(express.static('public'));
+app.get('/', (req, res) => {
+  res.send(`
+    <form action="/" method="post">
+      <label for="youtubeLink">Enter YouTube Link:</label>
+      <input type="text" name="youtubeLink" id="youtubeLink">
+      <button type="submit">Convert</button>
+    </form>
+  `);
+});
 
-app.post('/convert', upload.single('video'), (req, res) => {
-  if (!req.file) {
-    res.status(400).send('No file uploaded.');
-    return;
-  }
+app.post('/', (req, res) => {
+  const { youtubeLink } = req.body;
 
-  // Execute FFmpeg command to crop and merge video
-  const inputFilePath = req.file.path;
-  const outputFilePath = `output_${Date.now()}.mp4`;
-  const command = `ffmpeg -i ${inputFilePath} -filter_complex "[0:v]crop=iw/2:ih/2:0:ih/4[top];[0:v]crop=iw/2:ih/2:iw/2:ih/4[bottom];[top][bottom]vstack" ${outputFilePath}`;
+  // Run ffmpeg command to crop and merge the video
+  const command = `ffmpeg -i ${youtubeLink} -filter_complex "[0:v]crop=iw/2:ih:ow/2:0[left];[0:v]crop=iw/2:ih:0:0[right];[left][right]vstack=inputs=2" output.mp4`;
 
-  exec(command, (error, stdout, stderr) => {
+  exec(command, (error) => {
     if (error) {
-      console.error(`FFmpeg error: ${error}`);
-      res.status(500).send('Error occurred during video processing.');
-      return;
+      console.error('Error:', error);
+      res.send('An error occurred while processing the video.');
+    } else {
+      res.sendFile(__dirname + '/output.mp4');
     }
-
-    console.log(`FFmpeg output: ${stdout}`);
-
-    // Send the final video file to the user
-    res.download(outputFilePath, (err) => {
-      if (err) {
-        console.error(`File download error: ${err}`);
-        res.status(500).send('Error occurred during file download.');
-      }
-
-      // Cleanup the temporary files
-      fs.unlink(inputFilePath, (unlinkError) => {
-        if (unlinkError) {
-          console.error(`Input file deletion error: ${unlinkError}`);
-        }
-      });
-
-      fs.unlink(outputFilePath, (unlinkError) => {
-        if (unlinkError) {
-          console.error(`Output file deletion error: ${unlinkError}`);
-        }
-      });
-    });
   });
 });
 
